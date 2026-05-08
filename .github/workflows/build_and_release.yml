@@ -40,9 +40,6 @@ jobs:
           - architecture: x64
             msvc_arch: x64
             final_name: chromelevator_x64.dll
-          - architecture: arm64
-            msvc_arch: x64_arm64
-            final_name: chromelevator_arm64.dll
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -111,7 +108,6 @@ jobs:
 
             **Contents:**
             - `chromelevator_x64.dll`
-            - `chromelevator_arm64.dll`
           draft: false
           prerelease: false
           files: ${{ steps.zip_package.outputs.zip_path }}

@@ -16,12 +16,11 @@ Build Options:
 
 ### Automated Builds with GitHub Actions
 
-This project uses GitHub Actions to automatically build the injector executable (`chromelevator.dll`) for both **x64** and **ARM64** architectures.
+This project uses GitHub Actions to automatically build the injector executable (`chromelevator.dll`) for **x64** architecture.
 
 **Release Package Contents:**
 
 - `chromelevator_x64.dll`
-- `chromelevator_arm64.dll`
 
 ## 📦 Supported & Tested Versions
 
