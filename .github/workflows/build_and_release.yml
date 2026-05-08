@@ -39,10 +39,10 @@ jobs:
         include:
           - architecture: x64
             msvc_arch: x64
-            final_name: chromelevator_x64.exe
+            final_name: chromelevator_x64.dll
           - architecture: arm64
-            msvc_arch: x64_arm64 
-            final_name: chromelevator_arm64.exe
+            msvc_arch: x64_arm64
+            final_name: chromelevator_arm64.dll
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -58,12 +58,12 @@ jobs:
       - name: Run Build Script for Target
         shell: cmd
         run: |
-          call make.bat build_target_only
-      - name: Rename Final Executable for Artifact Upload
+          call make.bat build_target_dll
+      - name: Rename Final DLL for Artifact Upload
         shell: cmd
         run: |
-          rename chromelevator.exe ${{ matrix.final_name }}
-      - name: Upload Final Executable Artifact
+          rename chromelevator.dll ${{ matrix.final_name }}
+      - name: Upload Final DLL Artifact
         uses: actions/upload-artifact@v4
         with:
           name: injector-binary-${{ matrix.architecture }}
@@ -107,11 +107,11 @@ jobs:
           body: |
             Automated release for version **${{ github.ref_name }}**.
 
-            The attached `.zip` file contains the final injector executable for all supported architectures.
+            The attached `.zip` file contains the final injector DLL for all supported architectures.
 
             **Contents:**
-            - `chromelevator_x64.exe`
-            - `chromelevator_arm64.exe`
+            - `chromelevator_x64.dll`
+            - `chromelevator_arm64.dll`
           draft: false
           prerelease: false
           files: ${{ steps.zip_package.outputs.zip_path }}

